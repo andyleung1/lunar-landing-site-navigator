@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lunar South Pole Terrain</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* Layout: 3D stage fills the window, one control rail on the right (stacks under the stage on phones).
+   Single dark theme by choice: the subject is terrain lit against space. */
+:root {
+  color-scheme: dark;
+  --void: #0a0c11;        /* space behind the terrain */
+  --panel: #12151c;       /* control rail */
+  --raise: #1a1e28;       /* buttons, inputs */
+  --line: #2a303d;        /* hairlines */
+  --text: #e7e4dc;        /* regolith white */
+  --muted: #939aa8;
+  --sun: #f2b84b;         /* accent: sunlight */
+  --display: "Barlow Condensed", "Arial Narrow", "Helvetica Neue", sans-serif;
+  --body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+}
+* { box-sizing: border-box; }
+html, body { height: 100%; margin: 0; }
+body {
+  background: var(--void); color: var(--text);
+  font: 14px/1.45 var(--body);
+  display: grid; grid-template-columns: minmax(0, 1fr) 320px;
+}
+#stage { position: relative; min-height: 0; min-width: 0; overflow: hidden; }
+#view { display: block; width: 100%; height: 100%; touch-action: none; cursor: grab; outline: none; }
+#view.dragging { cursor: grabbing; }
+#view:focus-visible { box-shadow: inset 0 0 0 2px var(--sun); }
+
+.overlay {
+  position: absolute; pointer-events: none;
+  background: rgba(10, 12, 17, .78); border: 1px solid var(--line); border-radius: 6px;
+}
+#readout {
+  left: 16px; bottom: 16px; padding: 10px 12px;
+  display: grid; grid-template-columns: auto auto; gap: 2px 14px;
+  font: 12px/1.5 var(--mono); font-variant-numeric: tabular-nums;
+}
+#readout dt { color: var(--muted); }
+#readout dd { margin: 0; text-align: right; min-width: 11ch; }
+#hint { left: 16px; top: 16px; padding: 6px 10px; color: var(--muted); font-size: 12px; }
+#nogl { inset: 16px; display: none; place-items: center; padding: 24px; text-align: center; pointer-events: auto; }
+
+#rail {
+  background: var(--panel); border-left: 1px solid var(--line);
+  overflow-y: auto; padding: 20px 18px 24px;
+  display: flex; flex-direction: column; gap: 22px;
+}
+h1 {
+  margin: 0; font: 600 26px/1.05 var(--display); letter-spacing: .02em; text-transform: uppercase;
+  text-wrap: balance;
+}
+.sub { margin: 6px 0 0; color: var(--muted); font-size: 13px; }
+section { display: flex; flex-direction: column; gap: 10px; }
+h2 {
+  margin: 0; font: 500 13px/1 var(--display); letter-spacing: .14em; text-transform: uppercase; color: var(--muted);
+}
+
+#sites { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+button { font: inherit; color: inherit; cursor: pointer; }
+.site {
+  background: var(--raise); border: 1px solid var(--line); border-radius: 6px;
+  padding: 8px 10px; text-align: left; display: flex; flex-direction: column; gap: 2px;
+}
+.site b { font: 600 17px/1.1 var(--display); letter-spacing: .03em; }
+.site span { font: 11px/1.3 var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.site:hover { border-color: var(--muted); }
+.site[aria-pressed="true"] { border-color: var(--sun); box-shadow: inset 3px 0 0 var(--sun); }
+.site[aria-pressed="true"] b { color: var(--sun); }
+
+.seg { display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.seg button { background: var(--raise); border: 0; border-left: 1px solid var(--line); padding: 7px 4px; font-size: 13px; }
+.seg button:first-child { border-left: 0; }
+.seg button[aria-pressed="true"] { background: var(--sun); color: #1a1408; font-weight: 500; }
+
+.legend { display: flex; flex-direction: column; gap: 4px; }
+#ramp { height: 10px; border-radius: 3px; border: 1px solid var(--line); }
+.ticks { display: flex; justify-content: space-between; font: 11px var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+
+.row { display: grid; grid-template-columns: 1fr auto; gap: 4px 10px; align-items: baseline; }
+.row label { font-size: 13px; }
+.row output { font: 12px var(--mono); color: var(--muted); font-variant-numeric: tabular-nums; }
+.row input[type=range] { grid-column: 1 / -1; width: 100%; accent-color: var(--sun); margin: 0; }
+.check { display: flex; gap: 8px; align-items: center; font-size: 13px; }
+.check input { accent-color: var(--sun); width: 16px; height: 16px; margin: 0; }
+#reset { background: var(--raise); border: 1px solid var(--line); border-radius: 6px; padding: 8px 10px; }
+#reset:hover { border-color: var(--muted); }
+button:focus-visible, input:focus-visible { outline: 2px solid var(--sun); outline-offset: 2px; }
+.note { margin: 0; color: var(--muted); font-size: 12px; }
+
+/* Embed mode: one site, no title or site picker, narrower rail. Used when the page holds a single site. */
+body.embed { grid-template-columns: minmax(0, 1fr) 250px; }
+body.embed #head, body.embed #site-section { display: none; }
+body.embed #rail { padding: 16px 14px; gap: 18px; }
+
+@media (max-width: 760px) {
+  body:not(.embed) { display: flex; flex-direction: column; }
+  body:not(.embed) #stage { flex: 0 0 56%; }
+  body:not(.embed) #rail { flex: 1 1 auto; border-left: 0; border-top: 1px solid var(--line); padding: 16px; }
+  body:not(.embed) #hint { display: none; }
+  body:not(.embed) #readout { left: 8px; bottom: 8px; font-size: 11px; padding: 8px 10px; }
+}
+@media (max-width: 560px) {
+  body.embed { display: flex; flex-direction: column; }
+  body.embed #stage { flex: 0 0 56%; }
+  body.embed #rail { flex: 1 1 auto; border-left: 0; border-top: 1px solid var(--line); }
+  body.embed #hint { display: none; }
+  body.embed #readout { left: 8px; bottom: 8px; font-size: 11px; padding: 8px 10px; }
+}
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="view" tabindex="0" aria-label="3D terrain view. Drag to rotate, scroll to zoom, shift-drag to pan. Arrow keys rotate, plus and minus zoom."></canvas>
+  <div id="hint" class="overlay">Drag to rotate · Scroll or pinch to zoom · Shift-drag to pan</div>
+  <dl id="readout" class="overlay" aria-live="off">
+    <dt>Elevation</dt><dd id="r-z">–</dd>
+    <dt>Slope</dt><dd id="r-s">–</dd>
+    <dt>Latitude</dt><dd id="r-lat">–</dd>
+    <dt>Longitude</dt><dd id="r-lon">–</dd>
+    <dt>Polar X, Y</dt><dd id="r-xy">–</dd>
+  </dl>
+  <div id="nogl" class="overlay">This viewer needs WebGL 2, which this browser or device does not provide. Try a current version of Chrome, Firefox, Safari or Edge.</div>
+</div>
+
+<aside id="rail">
+  <header id="head">
+    <h1>Lunar South Pole Terrain</h1>
+    <p class="sub">Six survey sites within 5° of the pole. Point at the surface to read elevation, slope and position.</p>
+  </header>
+
+  <section id="site-section">
+    <h2>Site</h2>
+    <div id="sites"></div>
+  </section>
+
+  <section>
+    <h2>Surface colour</h2>
+    <div class="seg" id="mode">
+      <button type="button" data-mode="0" aria-pressed="true">Elevation</button>
+      <button type="button" data-mode="1" aria-pressed="false">Slope</button>
+      <button type="button" data-mode="2" aria-pressed="false">Plain</button>
+    </div>
+    <div class="legend" id="legend">
+      <div id="ramp"></div>
+      <div class="ticks"><span id="t0"></span><span id="t1"></span><span id="t2"></span></div>
+    </div>
+    <label class="check"><input type="checkbox" id="contours" checked> Contour lines every 100 m</label>
+    <p class="note" id="mark-note" hidden>The white ring marks the site position.</p>
+  </section>
+
+  <section>
+    <h2>Light and relief</h2>
+    <div class="row"><label for="exag">Vertical exaggeration</label><output id="exag-o" for="exag"></output>
+      <input type="range" id="exag" min="1" max="4" step="0.1" value="1.5"></div>
+    <div class="row"><label for="sunaz">Sun direction</label><output id="sunaz-o" for="sunaz"></output>
+      <input type="range" id="sunaz" min="0" max="360" step="1" value="300"></div>
+    <div class="row"><label for="sunel">Sun height above horizon</label><output id="sunel-o" for="sunel"></output>
+      <input type="range" id="sunel" min="1" max="60" step="1" value="25"></div>
+    <p class="note">At these latitudes the real Sun stays within a few degrees of the horizon. Shading here shows how each slope faces the light; it does not cast shadows.</p>
+    <button type="button" id="reset">Reset view</button>
+  </section>
+
+  <p class="note" id="source"></p>
+</aside>
+
+<script>
+/* ---- Data: one entry per site. Heights are 16-bit, base64, row 0 = north edge of the grid (max Y). ---- */
+const SITES = __SITES_JSON__;
+
+const R_MOON = 1737400;                       // metres, reference sphere
+const RAMPS = {
+  0: ['#1d2357', '#2f6690', '#5aa897', '#d9c873', '#f6f0e2'],   // elevation, low to high
+  1: ['#2b6f73', '#8fbf6b', '#f0d24f', '#e2713b', '#a8263c'],   // slope, 0 to 40 degrees
+  2: ['#9e9a93', '#9e9a93', '#9e9a93', '#9e9a93', '#9e9a93']    // plain regolith grey
+};
+const SLOPE_MAX = 40;
+const FOV = 35 * Math.PI / 180;
+const $ = id => document.getElementById(id);
+const fmt = (v, d = 0) => v.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
+
+const canvas = $('view');
+const gl = canvas.getContext('webgl2', { antialias: true });
+if (!gl) { $('nogl').style.display = 'grid'; $('readout').style.display = 'none'; $('hint').style.display = 'none'; }
+
+/* ---- State ---- */
+const state = { site: null, mode: 0, exag: 1.5, sunAz: 300, sunEl: 25, contours: true,
+                az: 0, el: 0, dist: 1, target: [0, 0, 0], hit: null };
+let dirty = true;
+const requestDraw = () => { dirty = true; };
+
+/* ---- Shaders ---- */
+const VS = `#version 300 es
+in vec2 aXY; in float aZ; in vec2 aGrad;
+uniform mat4 uMVP; uniform float uEx, uZc;
+out vec3 vPos; out vec2 vGrad;
+void main() { vPos = vec3(aXY, aZ); vGrad = aGrad; gl_Position = uMVP * vec4(aXY, (aZ - uZc) * uEx, 1.0); }`;
+const FS = `#version 300 es
+precision highp float;
+in vec3 vPos; in vec2 vGrad;
+uniform vec3 uRamp[5]; uniform vec3 uSun; uniform vec4 uHit, uMark;
+uniform float uEx, uZmin, uZmax, uSlopeMax, uContour; uniform int uMode;
+out vec4 o;
+vec3 ramp(float t) { t = clamp(t, 0.0, 1.0) * 4.0; int i = int(min(floor(t), 3.0)); return mix(uRamp[i], uRamp[i + 1], t - float(i)); }
+void main() {
+  float t = uMode == 1 ? degrees(atan(length(vGrad))) / uSlopeMax : (vPos.z - uZmin) / (uZmax - uZmin);
+  vec3 c = ramp(t);
+  vec3 n = normalize(vec3(-vGrad * uEx, 1.0));
+  c *= 0.2 + 0.95 * max(dot(n, uSun), 0.0);
+  if (uContour > 0.0) {
+    float f = vPos.z / uContour; float w = fwidth(f);
+    float line = 1.0 - smoothstep(0.0, 1.5 * w, abs(fract(f - 0.5) - 0.5));
+    c = mix(c, c * 0.35, line * 0.7 * (1.0 - smoothstep(0.25, 0.6, w)));
+  }
+  if (uMark.w > 0.0) {
+    float d = distance(vPos.xy, uMark.xy); float w = fwidth(d);
+    float ring = 1.0 - smoothstep(w, 2.5 * w, abs(d - uMark.z));
+    float core = 1.0 - smoothstep(uMark.z * 0.18, uMark.z * 0.18 + 1.5 * w, d);
+    c = mix(c, vec3(1.0), max(ring, core));
+  }
+  if (uHit.w > 0.0) {
+    float d = distance(vPos.xy, uHit.xy); float w = fwidth(d);
+    float ring = 1.0 - smoothstep(w, 2.5 * w, abs(d - uHit.z));
+    c = mix(c, vec3(0.95, 0.72, 0.29), ring);
+  }
+  o = vec4(c, 1.0);
+}`;
+
+let prog, U = {}, vao, vbo, ibo, indexCount = 0;
+function initGL() {
+  const sh = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s);
+    if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; };
+  prog = gl.createProgram();
+  gl.attachShader(prog, sh(gl.VERTEX_SHADER, VS)); gl.attachShader(prog, sh(gl.FRAGMENT_SHADER, FS));
+  gl.linkProgram(prog);
+  if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+  gl.useProgram(prog);
+  for (const n of ['uMVP', 'uEx', 'uZc', 'uRamp', 'uSun', 'uHit', 'uMark', 'uZmin', 'uZmax', 'uSlopeMax', 'uContour', 'uMode'])
+    U[n] = gl.getUniformLocation(prog, n);
+  vao = gl.createVertexArray(); gl.bindVertexArray(vao);
+  vbo = gl.createBuffer(); ibo = gl.createBuffer();
+  gl.bindBuffer(gl.ARRAY_BUFFER, vbo); gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo);
+  const attr = (name, size, offset) => { const l = gl.getAttribLocation(prog, name);
+    gl.enableVertexAttribArray(l); gl.vertexAttribPointer(l, size, gl.FLOAT, false, 20, offset); };
+  attr('aXY', 2, 0); attr('aZ', 1, 8); attr('aGrad', 2, 12);
+  gl.enable(gl.DEPTH_TEST);
+  gl.clearColor(10 / 255, 12 / 255, 17 / 255, 1);
+}
+
+/* ---- Site loading ---- */
+function decode(site) {
+  if (site.z) return;
+  const bin = atob(site.data), bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  const q = new Uint16Array(bytes.buffer), n = site.w * site.h, k = (site.zmax - site.zmin) / 65535;
+  const z = new Float32Array(n), gx = new Float32Array(n), gy = new Float32Array(n);
+  for (let i = 0; i < n; i++) z[i] = site.zmin + q[i] * k;
+  const { w, h, cell } = site;
+  for (let r = 0; r < h; r++) for (let c = 0; c < w; c++) {
+    const i = r * w + c, c0 = Math.max(c - 1, 0), c1 = Math.min(c + 1, w - 1), r0 = Math.max(r - 1, 0), r1 = Math.min(r + 1, h - 1);
+    gx[i] = (z[r * w + c1] - z[r * w + c0]) / ((c1 - c0) * cell);
+    gy[i] = (z[r0 * w + c] - z[r1 * w + c]) / ((r1 - r0) * cell);   // rows run north to south
+  }
+  site.z = z; site.gx = gx; site.gy = gy;
+  site.half = [w * cell / 2, h * cell / 2];           // local coords are centred on the site
+  site.zc = (site.zmin + site.zmax) / 2;
+  site.data = null;
+}
+
+function loadSite(site) {
+  decode(site);
+  const { w, h, cell, z, gx, gy, half } = site;
+  const v = new Float32Array(w * h * 5);
+  for (let r = 0, p = 0; r < h; r++) for (let c = 0; c < w; c++, p += 5) {
+    const i = r * w + c;
+    v[p] = -half[0] + (c + 0.5) * cell; v[p + 1] = half[1] - (r + 0.5) * cell;
+    v[p + 2] = z[i]; v[p + 3] = gx[i]; v[p + 4] = gy[i];
+  }
+  const idx = new Uint32Array((w - 1) * (h - 1) * 6);
+  for (let r = 0, p = 0; r < h - 1; r++) for (let c = 0; c < w - 1; c++) {
+    const a = r * w + c, b = a + 1, d = a + w, e = d + 1;
+    idx[p++] = a; idx[p++] = d; idx[p++] = b; idx[p++] = b; idx[p++] = d; idx[p++] = e;
+  }
+  gl.bindVertexArray(vao);
+  gl.bindBuffer(gl.ARRAY_BUFFER, vbo); gl.bufferData(gl.ARRAY_BUFFER, v, gl.STATIC_DRAW);
+  gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ibo); gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, idx, gl.STATIC_DRAW);
+  indexCount = idx.length;
+}
+
+/* ---- Camera maths ---- */
+const sub = (a, b) => [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+const cross = (a, b) => [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+const dot = (a, b) => a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+const norm = a => { const l = Math.hypot(a[0], a[1], a[2]); return [a[0] / l, a[1] / l, a[2] / l]; };
+function camera() {
+  const { az, el, dist, target } = state;
+  const eye = [target[0] + dist * Math.cos(el) * Math.sin(az), target[1] - dist * Math.cos(el) * Math.cos(az), target[2] + dist * Math.sin(el)];
+  const f = norm(sub(target, eye)), s = norm(cross(f, [0, 0, 1])), u = cross(s, f);
+  return { eye, f, s, u };
+}
+function mvp(cam, aspect) {
+  const { eye, f, s, u } = cam, n = state.dist * 0.02, far = state.dist * 12, t = 1 / Math.tan(FOV / 2);
+  const P = [t / aspect, 0, 0, 0, 0, t, 0, 0, 0, 0, (far + n) / (n - far), -1, 0, 0, 2 * far * n / (n - far), 0];
+  const V = [s[0], u[0], -f[0], 0, s[1], u[1], -f[1], 0, s[2], u[2], -f[2], 0, -dot(s, eye), -dot(u, eye), dot(f, eye), 1];
+  const M = new Float32Array(16);
+  for (let c = 0; c < 4; c++) for (let r = 0; r < 4; r++) {
+    let x = 0; for (let k = 0; k < 4; k++) x += P[k * 4 + r] * V[c * 4 + k]; M[c * 4 + r] = x;
+  }
+  return M;
+}
+function resetView() {
+  const s = state.site, extent = Math.max(s.half[0], s.half[1]) * 2;
+  state.az = -35 * Math.PI / 180; state.el = 34 * Math.PI / 180; state.dist = extent * 2.05; state.target = [0, 0, 0];
+  requestDraw();
+}
+function clampView() {
+  const s = state.site, extent = Math.max(s.half[0], s.half[1]) * 2;
+  state.el = Math.min(Math.max(state.el, 0.07), 1.55);
+  state.dist = Math.min(Math.max(state.dist, extent * 0.12), extent * 4);
+  state.target[0] = Math.min(Math.max(state.target[0], -s.half[0]), s.half[0]);
+  state.target[1] = Math.min(Math.max(state.target[1], -s.half[1]), s.half[1]);
+}
+
+/* ---- Height lookup and picking ---- */
+function sample(arr, x, y) {            // bilinear, local metres; returns null outside the grid
+  const s = state.site, fc = (x + s.half[0]) / s.cell - 0.5, fr = (s.half[1] - y) / s.cell - 0.5;
+  if (fc < 0 || fr < 0 || fc > s.w - 1 || fr > s.h - 1) return null;
+  const c = Math.min(Math.floor(fc), s.w - 2), r = Math.min(Math.floor(fr), s.h - 2), tx = fc - c, ty = fr - r, i = r * s.w + c;
+  return (arr[i] * (1 - tx) + arr[i + 1] * tx) * (1 - ty) + (arr[i + s.w] * (1 - tx) + arr[i + s.w + 1] * tx) * ty;
+}
+function pick(px, py) {
+  const s = state.site, rect = canvas.getBoundingClientRect(), cam = camera();
+  const nx = (px - rect.left) / rect.width * 2 - 1, ny = 1 - (py - rect.top) / rect.height * 2, th = Math.tan(FOV / 2);
+  const d = norm([0, 1, 2].map(i => cam.f[i] + cam.s[i] * nx * th * rect.width / rect.height + cam.u[i] * ny * th));
+  const above = t => {                  // ray height above the surface at distance t (null off-grid)
+    const x = cam.eye[0] + d[0] * t, y = cam.eye[1] + d[1] * t, h = sample(s.z, x, y);
+    return h === null ? null : cam.eye[2] + d[2] * t - (h - s.zc) * state.exag;
+  };
+  const step = s.cell * 0.75, tMax = state.dist * 4;
+  let prev = null, tPrev = 0;
+  for (let t = 0; t < tMax; t += step) {
+    const a = above(t);
+    if (a !== null && a <= 0 && prev !== null && prev > 0) {
+      let lo = tPrev, hi = t;
+      for (let k = 0; k < 10; k++) { const m = (lo + hi) / 2; (above(m) > 0) ? lo = m : hi = m; }
+      return [cam.eye[0] + d[0] * hi, cam.eye[1] + d[1] * hi];
+    }
+    prev = a; tPrev = t;
+  }
+  return null;
+}
+function updateReadout(xy) {
+  state.hit = xy; requestDraw();
+  const ids = ['r-z', 'r-s', 'r-lat', 'r-lon', 'r-xy'];
+  if (!xy) { ids.forEach(i => $(i).textContent = '–'); return; }
+  const s = state.site, z = sample(s.z, xy[0], xy[1]);
+  const slope = Math.atan(Math.hypot(sample(s.gx, xy[0], xy[1]), sample(s.gy, xy[0], xy[1]))) * 180 / Math.PI;
+  const X = s.cx + xy[0], Y = s.cy + xy[1];                     // south polar stereographic metres
+  const lat = -90 + 2 * Math.atan(Math.hypot(X, Y) / (2 * R_MOON)) * 180 / Math.PI;
+  const lon = (Math.atan2(X, Y) * 180 / Math.PI + 360) % 360;
+  $('r-z').textContent = fmt(z) + ' m';
+  $('r-s').textContent = fmt(slope, 1) + '°';
+  $('r-lat').textContent = fmt(-lat, 3) + '° S';
+  $('r-lon').textContent = fmt(lon, 2) + '° E';
+  $('r-xy').textContent = fmt(X / 1000, 2) + ', ' + fmt(Y / 1000, 2) + ' km';
+}
+
+/* ---- Draw ---- */
+const hexRGB = h => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16) / 255);
+function draw() {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const w = Math.max(1, Math.round(canvas.clientWidth * dpr)), h = Math.max(1, Math.round(canvas.clientHeight * dpr));
+  if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+  gl.viewport(0, 0, w, h);
+  gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+  const s = state.site, a = state.sunAz * Math.PI / 180, e = state.sunEl * Math.PI / 180;
+  gl.uniformMatrix4fv(U.uMVP, false, mvp(camera(), w / h));
+  gl.uniform1f(U.uEx, state.exag); gl.uniform1f(U.uZc, s.zc);
+  gl.uniform1f(U.uZmin, s.zmin); gl.uniform1f(U.uZmax, s.zmax); gl.uniform1f(U.uSlopeMax, SLOPE_MAX);
+  gl.uniform1i(U.uMode, state.mode); gl.uniform1f(U.uContour, state.contours ? 100 : 0);
+  gl.uniform3fv(U.uRamp, RAMPS[state.mode].flatMap(hexRGB));
+  gl.uniform3f(U.uSun, Math.cos(e) * Math.sin(a), Math.cos(e) * Math.cos(a), Math.sin(e));
+  const hit = state.hit;
+  gl.uniform4f(U.uHit, hit ? hit[0] : 0, hit ? hit[1] : 0, state.dist * 0.014, hit ? 1 : 0);
+  const m = s.mark;   // optional fixed marker, polar stereographic metres
+  gl.uniform4f(U.uMark, m ? m[0] - s.cx : 0, m ? m[1] - s.cy : 0, state.dist * 0.02, m ? 1 : 0);
+  gl.drawElements(gl.TRIANGLES, indexCount, gl.UNSIGNED_INT, 0);
+}
+function frame() { if (dirty) { dirty = false; draw(); } requestAnimationFrame(frame); }
+
+/* ---- Controls ---- */
+function setLegend() {
+  const s = state.site;
+  $('legend').style.display = state.mode === 2 ? 'none' : '';
+  $('ramp').style.background = 'linear-gradient(90deg,' + RAMPS[state.mode].join(',') + ')';
+  if (state.mode === 0) { $('t0').textContent = fmt(s.zmin) + ' m'; $('t1').textContent = fmt(s.zc) + ' m'; $('t2').textContent = fmt(s.zmax) + ' m'; }
+  else { $('t0').textContent = '0°'; $('t1').textContent = SLOPE_MAX / 2 + '°'; $('t2').textContent = SLOPE_MAX + '°+'; }
+}
+function selectSite(id, fromHash) {
+  const site = SITES.find(s => s.id === id) || SITES[0];
+  state.site = site; loadSite(site);
+  document.querySelectorAll('.site').forEach(b => b.setAttribute('aria-pressed', b.dataset.id === site.id));
+  $('mark-note').hidden = !site.mark;
+  updateReadout(null); setLegend(); resetView();
+  if (!fromHash) { try { history.replaceState(null, '', '#' + site.id); } catch (e) { try { location.hash = site.id; } catch (e2) {} } }
+}
+function buildUI() {
+  if (SITES.length === 1) document.body.classList.add('embed');
+  for (const s of SITES) {
+    const b = document.createElement('button');
+    b.type = 'button'; b.className = 'site'; b.dataset.id = s.id; b.setAttribute('aria-pressed', 'false');
+    b.innerHTML = '<b></b><span></span><span></span>';
+    b.children[0].textContent = s.name;
+    b.children[1].textContent = fmt(-s.lat, 2) + '°S ' + fmt(s.lon, 1) + '°E';
+    b.children[2].textContent = fmt(s.w * s.cell / 1000) + ' × ' + fmt(s.h * s.cell / 1000) + ' km';
+    b.addEventListener('click', () => selectSite(s.id));
+    $('sites').appendChild(b);
+  }
+  $('mode').addEventListener('click', ev => {
+    const b = ev.target.closest('button'); if (!b) return;
+    state.mode = +b.dataset.mode;
+    $('mode').querySelectorAll('button').forEach(x => x.setAttribute('aria-pressed', x === b));
+    setLegend(); requestDraw();
+  });
+  const slider = (id, key, text) => {
+    const el = $(id), sync = () => { state[key] = +el.value; $(id + '-o').textContent = text(+el.value); requestDraw(); };
+    el.addEventListener('input', sync); sync();
+  };
+  slider('exag', 'exag', v => v.toFixed(1) + '×');
+  slider('sunaz', 'sunAz', v => v + '°');
+  slider('sunel', 'sunEl', v => v + '°');
+  $('contours').addEventListener('change', ev => { state.contours = ev.target.checked; requestDraw(); });
+  $('reset').addEventListener('click', resetView);
+  $('source').textContent = 'Elevation in metres relative to a 1,737.4 km sphere, south polar stereographic projection. ' +
+    'Source grids are 5 m per pixel, averaged to ' + SITES[0].cell + ' m for this viewer.';
+}
+
+/* ---- Pointer, wheel and keyboard ---- */
+const pointers = new Map();
+let pinch = null, moved = false;
+function panBy(dx, dy) {
+  const cam = camera(), k = 2 * state.dist * Math.tan(FOV / 2) / canvas.clientHeight, g = norm([cam.f[0], cam.f[1], 0]);
+  state.target[0] += (-cam.s[0] * dx + g[0] * dy) * k; state.target[1] += (-cam.s[1] * dx + g[1] * dy) * k;
+}
+function bindInput() {
+  canvas.addEventListener('contextmenu', e => e.preventDefault());
+  canvas.addEventListener('pointerdown', e => {
+    canvas.setPointerCapture(e.pointerId); pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    moved = false; pinch = null; canvas.classList.add('dragging');
+  });
+  canvas.addEventListener('pointermove', e => {
+    const p = pointers.get(e.pointerId);
+    if (!p) { if (e.pointerType === 'mouse') updateReadout(pick(e.clientX, e.clientY)); return; }
+    const dx = e.clientX - p.x, dy = e.clientY - p.y; p.x = e.clientX; p.y = e.clientY;
+    if (Math.abs(dx) + Math.abs(dy) > 0) moved = true;
+    if (pointers.size === 1) {
+      if (e.shiftKey || e.buttons === 2) panBy(dx, dy);
+      else { state.az -= dx * 0.006; state.el += dy * 0.006; }
+    } else if (pointers.size === 2) {
+      const [a, b] = [...pointers.values()], d = Math.hypot(a.x - b.x, a.y - b.y), mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+      if (pinch) { state.dist *= pinch.d / d; panBy(mx - pinch.mx, my - pinch.my); }
+      pinch = { d, mx, my };
+    }
+    clampView(); requestDraw();
+  });
+  const end = e => {
+    if (pointers.has(e.pointerId) && !moved && pointers.size === 1) updateReadout(pick(e.clientX, e.clientY));
+    pointers.delete(e.pointerId); pinch = null;
+    if (!pointers.size) canvas.classList.remove('dragging');
+  };
+  canvas.addEventListener('pointerup', end); canvas.addEventListener('pointercancel', end);
+  canvas.addEventListener('pointerleave', e => { if (e.pointerType === 'mouse' && !pointers.size) updateReadout(null); });
+  canvas.addEventListener('wheel', e => { e.preventDefault(); state.dist *= Math.exp(e.deltaY * 0.0012); clampView(); requestDraw(); }, { passive: false });
+  canvas.addEventListener('keydown', e => {
+    const k = e.key, r = 0.08;
+    if (k === 'ArrowLeft') state.az += r; else if (k === 'ArrowRight') state.az -= r;
+    else if (k === 'ArrowUp') state.el += r; else if (k === 'ArrowDown') state.el -= r;
+    else if (k === '+' || k === '=') state.dist *= 0.9; else if (k === '-') state.dist *= 1.1;
+    else return;
+    e.preventDefault(); clampView(); requestDraw();
+  });
+  new ResizeObserver(requestDraw).observe(canvas);
+  window.addEventListener('hashchange', () => { const id = location.hash.slice(1); if (id && id !== state.site.id) selectSite(id, true); });
+}
+
+if (gl) {
+  initGL(); buildUI(); bindInput();
+  selectSite(location.hash.slice(1), true);
+  requestAnimationFrame(frame);
+}
+</script>
+</body>
+</html>
