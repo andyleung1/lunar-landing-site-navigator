@@ -53,7 +53,6 @@ python metrics.py        # sunlight, Earth visibility and power statistics
 ```
 Adding a site
 Download its DEM (see Data sources) or cut one from the south pole mosaic in QGIS, with the site in the middle.
-Save it as a GeoTIFF in `data/` and run `check_dem.py` on it.
 Add an entry to `sites` in `sites.py`.
 Run python precompute.py.
 Limitations
