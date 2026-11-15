@@ -1,0 +1,8 @@
+# Dark navy theme with blue accents (matches theme.py).
+[theme]
+base = "dark"
+primaryColor = "#2f6fed"
+backgroundColor = "#0e1018"
+secondaryBackgroundColor = "#161a27"
+textColor = "#c9cdd8"
+font = "sans serif"
