@@ -5,6 +5,7 @@
 # The Sun/Earth positions are calculated for the dates you pick, then
 # remembered, so going back to the same site and dates is instant.
 # The terrain horizon is saved to a file (see horizon.py / precompute.py).
+# The look (dark navy, blue accents) is in theme.py and .streamlit/config.toml.
 
 import datetime as dt
 import math
@@ -16,6 +17,7 @@ from horizon import saved_horizon
 from metrics import compute_table, make_times
 from sites import get_sites
 from terrain3d import viewer_html
+from theme import BLUE, GREY, LIGHT_BLUE, apply_theme, title
 
 EARLIEST = dt.date(1900, 1, 2)    # the NASA files cover 1900 to 2050
 LATEST = dt.date(2050, 12, 31)
@@ -69,10 +71,14 @@ def for_chart(table, step_hours):
     return table.resample(f"{rows_per_point * step_hours}h").mean()
 
 
-st.title("Lunar south pole: sunlight and Earth visibility")
+st.set_page_config(page_title="Lunar South Pole", page_icon="🌑", layout="wide")
+apply_theme()
+title("Lunar", "South Pole", "Sunlight and Earth visibility")
 sites = site_list()
 
 # ---------- Sidebar: nothing recalculates until "Update" is pressed ----------
+with st.sidebar:
+    title("Lunar", "Pole")
 with st.sidebar.form("settings"):
     name = st.selectbox("Site", [s["name"] for s in sites])
     start = st.date_input("From", dt.date(2027, 1, 1), min_value=EARLIEST, max_value=LATEST)
@@ -126,19 +132,21 @@ if len(chart) < len(df):
     st.caption(f"Charts show averages over {step * len(df) / len(chart):.0f}-hour blocks "
                "to stay responsive. The numbers above use every time step.")
 
+# Line colours: the body in blue, the terrain in grey.
 st.subheader("Sun height vs terrain")
-st.line_chart(chart[["sun_alt", "sun_terrain"]])
+st.line_chart(chart[["sun_alt", "sun_terrain"]], color=[BLUE, GREY])
 
 st.subheader("Earth height vs terrain")
-st.line_chart(chart[["earth_alt", "earth_terrain"]])
+st.line_chart(chart[["earth_alt", "earth_terrain"]], color=[LIGHT_BLUE, GREY])
 
 st.subheader("Panel power (W)")
-st.line_chart(chart["power_w"])
+st.line_chart(chart["power_w"], color=BLUE)
 
 if site.get("dem"):
     az, terrain, reach_km = saved_horizon(site)
     st.subheader("Terrain horizon")
-    st.line_chart(pd.DataFrame({"terrain": terrain}, index=pd.Index(az, name="azimuth")))
+    st.line_chart(pd.DataFrame({"terrain": terrain}, index=pd.Index(az, name="azimuth")),
+                  color=GREY)
     st.caption(f"Terrain beyond {reach_km:.1f} km is not in the DEM.")
 
     st.subheader("3D terrain")
