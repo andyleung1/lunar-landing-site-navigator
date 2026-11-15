@@ -15,6 +15,7 @@ import streamlit as st
 from horizon import saved_horizon
 from metrics import compute_table, make_times
 from sites import get_sites
+from terrain3d import viewer_html
 
 EARLIEST = dt.date(1900, 1, 2)    # the NASA files cover 1900 to 2050
 LATEST = dt.date(2050, 12, 31)
@@ -32,6 +33,23 @@ def results(site, start, end, step_hours):
     """Sun/Earth table for one site and date range. Remembered (cached), so
     the same site and dates are only calculated once."""
     return compute_table(site, make_times(start, end, step_hours))
+
+
+@st.cache_data(show_spinner=False, max_entries=10)
+def terrain_view(dem_path, name, lat, lon):
+    """HTML for the 3D terrain view of one site. Remembered (cached), so the
+    DEM is only read and shrunk once per site."""
+    return viewer_html(dem_path, name, lat, lon)
+
+
+def show_html(html, height):
+    """Show an HTML page inside the app. Newer Streamlit uses st.iframe;
+    older versions use components.html."""
+    if hasattr(st, "iframe"):
+        st.iframe(html, height=height)
+    else:
+        import streamlit.components.v1 as components
+        components.html(html, height=height)
 
 
 def longest_run_hours(flags, step_hours):
@@ -122,5 +140,11 @@ if site.get("dem"):
     st.subheader("Terrain horizon")
     st.line_chart(pd.DataFrame({"terrain": terrain}, index=pd.Index(az, name="azimuth")))
     st.caption(f"Terrain beyond {reach_km:.1f} km is not in the DEM.")
+
+    st.subheader("3D terrain")
+    try:
+        show_html(terrain_view(str(site["dem"]), name, site["lat"], site["lon"]), height=600)
+    except Exception as e:
+        st.warning(f"Couldn't build the 3D view for this site: {e}")
 else:
     st.info("No DEM for this site: terrain treated as flat.")
